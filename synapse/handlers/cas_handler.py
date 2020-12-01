@@ -13,15 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-import urllib
+import urllib.parse
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
 from xml.etree import ElementTree as ET
 
 from twisted.web.client import PartialDownloadError
 
 from synapse.api.errors import Codes, LoginError
+from synapse.handlers.sso import UserAttributes
 from synapse.http.site import SynapseRequest
-from synapse.types import UserID, map_username_to_mxid_localpart
+from synapse.types import map_username_to_mxid_localpart
 
 if TYPE_CHECKING:
     from synapse.app.homeserver import HomeServer
@@ -49,6 +50,11 @@ class CasHandler:
         self._cas_required_attributes = hs.config.cas_required_attributes
 
         self._http_client = hs.get_proxied_http_client()
+
+        # identifier for the external_ids table
+        self._auth_provider_id = "cas"
+
+        self._sso_handler = hs.get_sso_handler()
 
     def _build_service_param(self, args: Dict[str, str]) -> str:
         """
@@ -240,20 +246,29 @@ class CasHandler:
             user_agent: The user agent of the client making the request.
             ip_address: The IP address of the client making the request.
 
+        Raises:
+            MappingException: if there was an error while mapping some properties
+
         Returns:
              The user ID associated with this response.
         """
 
-        localpart = map_username_to_mxid_localpart(remote_user_id)
-        user_id = UserID(localpart, self._hostname).to_string()
-        registered_user_id = await self._auth_handler.check_user_exists(user_id)
+        async def cas_response_to_user_attributes(failures: int) -> UserAttributes:
+            """
+            Map from CAS attributes to user attributes.
+            """
+            localpart = map_username_to_mxid_localpart(remote_user_id)
 
-        # If the user does not exist, register it.
-        if not registered_user_id:
-            registered_user_id = await self._registration_handler.register_user(
-                localpart=localpart,
-                default_display_name=display_name,
-                user_agent_ips=[(user_agent, ip_address)],
-            )
+            # Append suffix integer if last call to this function failed to produce
+            # a usable mxid.
+            localpart += str(failures) if failures else ""
 
-        return registered_user_id
+            return UserAttributes(localpart=localpart, display_name=display_name)
+
+        return await self._sso_handler.get_mxid_from_sso(
+            self._auth_provider_id,
+            remote_user_id,
+            user_agent,
+            ip_address,
+            cas_response_to_user_attributes,
+        )
