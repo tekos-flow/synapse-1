@@ -357,8 +357,11 @@ class RestHelper:
         Returns the result of the final token login.
 
         Requires that "oidc_config" in the homeserver config be set appropriately
-        (TEST_OIDC_CONFIG is a suitable example). Also requires the login servlet and
-        the OIDC callback resource to be mounted at the normal places.
+        (TEST_OIDC_CONFIG is a suitable example) - and by implication, needs a
+        "public_base_url".
+
+        Also requires the login servlet and the OIDC callback resource to be mounted at
+        the normal places.
         """
         client_redirect_url = "https://x"
 
@@ -371,7 +374,7 @@ class RestHelper:
         )
         # that will redirect to the OIDC IdP, but we skip that and go straight
         # back to synapse's OIDC callback resource. However, we do need the "state"
-        # parm that synapse passes to the IdP via query params, and the cookie that
+        # param that synapse passes to the IdP via query params, and the cookie that
         # synapse passes to the client.
         assert channel.code == 302
         oauth_uri = channel.headers.getRawHeaders("Location")[0]

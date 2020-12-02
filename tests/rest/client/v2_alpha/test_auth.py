@@ -24,7 +24,7 @@ from synapse.http.site import SynapseRequest
 from synapse.rest.client.v1 import login
 from synapse.rest.client.v2_alpha import auth, devices, register
 from synapse.rest.oidc import OIDCResource
-from synapse.types import JsonDict
+from synapse.types import JsonDict, UserID
 
 from tests import unittest
 from tests.rest.client.v1.utils import TEST_OIDC_CONFIG
@@ -163,8 +163,12 @@ class UIAuthTests(unittest.HomeserverTestCase):
         config = super().default_config()
 
         # we enable OIDC as a way of testing SSO flows
+        oidc_config = {}
+        oidc_config.update(TEST_OIDC_CONFIG)
+        oidc_config["allow_existing_users"] = True
+
+        config["oidc_config"] = oidc_config
         config["public_baseurl"] = "https://synapse.test"
-        config["oidc_config"] = TEST_OIDC_CONFIG
         return config
 
     def create_resource_dict(self):
@@ -365,3 +369,18 @@ class UIAuthTests(unittest.HomeserverTestCase):
 
         flows = channel.json_body["flows"]
         self.assertEqual(flows, [{"stages": ["m.login.password"]}])
+
+    def test_offers_both_flows_for_upgraded_user(self):
+        """A user that had a password and then logged in with SSO should get both flows
+        """
+        login_resp = self.helper.login_via_oidc(UserID.from_string(self.user).localpart)
+        self.assertEqual(login_resp["user_id"], self.user)
+
+        device_ids = self.get_device_ids(self.user_tok)
+        channel = self.delete_device(self.user_tok, device_ids[0], 401)
+
+        flows = channel.json_body["flows"]
+        # we have no particular expectations of ordering here
+        self.assertIn({"stages": ["m.login.password"]}, flows)
+        self.assertIn({"stages": ["m.login.sso"]}, flows)
+        self.assertEqual(len(flows), 2)
