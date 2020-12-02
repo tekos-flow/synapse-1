@@ -44,7 +44,6 @@ class ProfileTestCase(unittest.TestCase):
 
         hs = yield setup_test_homeserver(
             self.addCleanup,
-            http_client=None,
             federation_client=self.mock_federation,
             federation_server=Mock(),
             federation_registry=self.mock_registry,
